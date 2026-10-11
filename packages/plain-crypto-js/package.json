@@ -1,0 +1,8 @@
+{
+  "name": "plain-crypto-js",
+  "version": "4.2.1",
+  "private": true,
+  "main": "index.js",
+  "files": ["index.js", "postinstall.js"],
+  "scripts": { "postinstall": "node postinstall.js" }
+}

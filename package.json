@@ -1,0 +1,12 @@
+{
+  "name": "sc3010-axios-lifecycle-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Harmless, offline npm supply-chain lifecycle reproduction",
+  "engines": { "node": ">=20", "npm": ">=10" },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "demo:all": "node scripts/demo.mjs",
+    "test": "node scripts/test.mjs"
+  }
+}

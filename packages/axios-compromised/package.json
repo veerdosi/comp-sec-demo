@@ -1,0 +1,10 @@
+{
+  "name": "axios-demo",
+  "version": "1.14.1",
+  "private": true,
+  "main": "index.js",
+  "files": ["index.js"],
+  "dependencies": {
+    "plain-crypto-js": "file:../../dist/plain-crypto-js-4.2.1.tgz"
+  }
+}
