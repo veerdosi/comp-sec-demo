@@ -1,6 +1,6 @@
 # SC3010: Axios npm supply-chain reproduction
 
-This project demonstrates a transitive dependency executing code during `npm install`, while the victim application continues to work. Every package is a locally authored stand-in. The only simulated payload is a fixed proof-of-execution text file inside the installed dependency.
+This project demonstrates a transitive dependency executing code during `npm install`, while the victim application continues to work. Every package is a locally authored stand-in. The hook reads and verifies a synthetic API key from a generated `.env` fixture, then records success without copying or printing the key. It also creates the original proof-of-execution file.
 
 ## Run
 
@@ -11,9 +11,9 @@ npm run setup
 npm run demo:all
 ```
 
-`setup` packs three local tarballs and verifies the clean baseline. `demo:all` creates fresh vulnerable and protected victim directories, installs the same compromised tarball in each, runs the application, and checks the results. It prints the actual npm commands and npm's captured output. There are no manual prompts or artificial delays. Any failed check exits with a nonzero status instead of printing PASS.
+`setup` packs three local tarballs and verifies the clean baseline. `demo:all` runs the protected installation first. In an interactive terminal, it pauses after that result until you press Enter, then runs the vulnerable installation. This lets you explain the safe result before showing the confidentiality risk. It creates fresh victim directories, installs the same compromised tarball in each, runs the application, and checks the results. It prints the actual npm commands and npm's captured output. Noninteractive runs and automated tests skip the pause. There are no artificial delays. Any failed check exits with a nonzero status instead of printing PASS.
 
-Setup and installation use offline mode with audit, funding, and update notifications disabled. npm uses a project-local cache and empty user/global config files. Child npm processes discard inherited `npm_config_*` settings so a personal `ignore-scripts` setting cannot silently change the experiment. No demonstration code makes network requests, reads credentials, or downloads malware. Research links below are for reading separately.
+Setup and installation use offline mode with audit, funding, and update notifications disabled. npm uses a project-local cache and empty user/global config files. Child npm processes discard inherited `npm_config_*` settings so a personal `ignore-scripts` setting cannot silently change the experiment. No demonstration code makes network requests, accesses real credentials, or downloads malware. Each generated victim directory gets the same synthetic `.env` file; never replace it with real credentials. Research links below are for reading separately.
 
 ## The real incident
 
@@ -27,7 +27,7 @@ The other supplied reference is [Trend Micro's Axios incident report](https://ww
 victim application
   └─ axios-demo@1.14.1         unchanged application code
        └─ plain-crypto-js@4.2.1
-            └─ postinstall → PROOF_OF_EXECUTION.txt
+            └─ postinstall → verify dummy .env → boolean receipt + proof file
 ```
 
 The clean package is `axios-demo@1.14.0`; the compromised package is `axios-demo@1.14.1`. Their `index.js` files are byte-for-byte identical. Besides the version number, the compromised manifest adds only one dependency. The victim declares only `axios-demo`: npm, rather than our runner, installs the transitive dependency and invokes its lifecycle hook.
@@ -38,13 +38,33 @@ The package name `axios-demo` distinguishes the imitation from real Axios. Its p
 
 `--foreground-scripts` makes npm's real lifecycle output visible. The vulnerable install explicitly uses `--ignore-scripts=false`; the protected install uses `--ignore-scripts`. Both install identical archives, checked through lockfile integrity values and installed source bytes.
 
+## Simulated confidentiality risk
+
+Both `.demo/protected/.env` and `.demo/vulnerable/.env` contain a fixed, clearly fake `DEMO_API_KEY` and a synthetic-fixture header. The hook reads exactly the `.env` two levels above its installed package directory. It requires a generated `.demo/protected` or `.demo/vulnerable` location and verifies the complete expected fixture contents. It never searches for credentials or reads environment variables, home directories, or other credential files.
+
+After a successful read and exact match, the hook writes `CREDENTIAL_ACCESS.json` containing only `{"dummyCredentialVerified":true}` inside its package directory. No key value or hash is printed or copied to the receipt. A missing or incorrect fixture fails with a generic error and creates no success evidence.
+
+The runner checks the fixture is present and unchanged in both cases, and verifies the receipt and hook output before displaying:
+
+```text
+PROTECTED
+Simulated credential access: BLOCKED
+
+[Press Enter in an interactive terminal]
+
+VULNERABLE
+Simulated credential access: SUCCESS
+```
+
+`BLOCKED` means the installation hook did not run under `--ignore-scripts`; it is not a filesystem permission boundary. The dummy file is still readable by code running with the user's permissions. This shows how an installation hook can cross a confidentiality boundary even when the application's behaviour appears normal. No exfiltration is implemented.
+
 ## Results and verification
 
 ```sh
 npm test
 ```
 
-The test rebuilds all archives, verifies the clean application, and runs both demonstrations twice. Before the second run it plants stale files, including a proof file in the protected directory, to check that automatic cleanup removes them. It also copies the source to a temporary directory whose path contains spaces and verifies setup and the demo there, then removes that copy. Each demonstration also checks:
+The test rebuilds all archives, verifies the clean application, and runs both demonstrations twice. Before the second run it plants stale files, including a proof file in the protected directory, to check that automatic cleanup removes them. It also copies the source to a temporary directory whose path contains spaces and verifies setup and the demo there, then removes that copy. Missing and incorrect dummy fixtures are tested directly against the hook and must fail without success evidence. Each demonstration also checks:
 
 - npm's dependency tree contains the expected transitive dependency.
 - The installed parent manifest adds the expected local dependency.
@@ -52,6 +72,8 @@ The test rebuilds all archives, verifies the clean application, and runs both de
 - The dependency's source and lifecycle script match the harmless local package.
 - The vulnerable proof file has the exact expected content and the hook's output appears.
 - The protected proof file is absent and the hook's output does not appear.
+- Both synthetic `.env` fixtures remain unchanged; only the vulnerable install produces a verified credential-access receipt.
+- The npm output never contains the fake key.
 - Both applications return the asserted status and course data.
 - All lockfile resolutions are local; both cases use the same package integrity values.
 
@@ -60,6 +82,8 @@ After a run, inspect:
 ```text
 .demo/vulnerable/node_modules/plain-crypto-js/PROOF_OF_EXECUTION.txt
 .demo/protected/node_modules/plain-crypto-js/   (no proof file)
+.demo/vulnerable/node_modules/plain-crypto-js/CREDENTIAL_ACCESS.json
+.demo/protected/.env                          (synthetic fixture, also in vulnerable)
 .demo/results.json                            (checked results and integrity values)
 ```
 
@@ -67,7 +91,7 @@ Every demo run deletes and recreates just the two generated victim directories. 
 
 ## Why the mitigation helps
 
-According to [npm's `ignore-scripts` documentation](https://docs.npmjs.com/cli/v11/commands/npm-install/#ignore-scripts), this option prevents package scripts from running during installation. The compromised dependency is still installed, but its hook cannot create the proof file. This blocks the reproduced install-time execution path.
+According to [npm's `ignore-scripts` documentation](https://docs.npmjs.com/cli/v11/commands/npm-install/#ignore-scripts), this option prevents package scripts from running during installation. The compromised dependency is still installed, but its hook cannot read the dummy credential or create the proof and receipt files. This blocks the reproduced install-time execution path.
 
 It does not remove or certify the dependency. Malicious code could run later when imported, called, or explicitly executed. Explicit `npm run` commands still execute the named script even with `ignore-scripts`; legitimate packages may also need installation scripts to build native code or prepare assets. Use reviewed dependency changes, vetted package sources, lockfiles and integrity checks, and isolated build environments alongside lifecycle restrictions. A lockfile can faithfully pin a malicious package, so integrity alone does not establish trust.
 

@@ -7,6 +7,7 @@ export const root = fileURLToPath(new URL('../', import.meta.url));
 export const dist = join(root, 'dist');
 export const work = join(root, '.demo');
 export const proofText = 'Harmless SC3010 demo: plain-crypto-js@4.2.1 postinstall executed.\n';
+export const dummyEnv = '# SC3010 SYNTHETIC FIXTURE ONLY\nDEMO_API_KEY=sc3010-fake-key-not-a-real-credential\n';
 export const json = path => JSON.parse(readFileSync(path, 'utf8'));
 export const save = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n');
 export function reset(path) {
@@ -33,6 +34,7 @@ export function command(executable, args, cwd = root, show = true) {
 export function makeVictim(name, archive) {
   const cwd = join(work, name);
   reset(cwd);
+  writeFileSync(join(cwd, '.env'), dummyEnv, { mode: 0o600 });
   copyFileSync(join(root, 'victim/app.cjs'), join(cwd, 'app.cjs'));
   save(join(cwd, 'package.json'), {
     name: `victim-${name}`, version: '1.0.0', private: true,
